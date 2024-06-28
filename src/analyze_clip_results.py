@@ -22,7 +22,7 @@ from PIL import Image
 from sklearn.decomposition import PCA
 
 # import torch
-import clip
+# import clip
 
 from util.util import fdr_correct_p
 from util.data_util import (
@@ -35,7 +35,7 @@ from util.model_config import *
 
 # device = "cuda" if torch.cuda.is_available() else "cpu"
 
-from pycocotools.coco import COCO
+# from pycocotools.coco import COCO
 
 
 def plot_image_wise_performance(model1, model2, masking="sig", measure="corrs"):
@@ -411,8 +411,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--subj",
-        type=int,
-        default=1,
+        type=str,
+        default="01",
         help="Specify which subject to build model on. Currently it supports subject 1, 2, 7",
     )
     parser.add_argument(
@@ -455,7 +455,7 @@ if __name__ == "__main__":
 
     config = configparser.ConfigParser()
     config.read("config.cfg")
-    PPDATA_PATH = config["NSD"]["PPdataPath"]
+    # PPDATA_PATH = config["NSD"]["PPdataPath"]
 
     if args.process_bootstrap_results:
         # for subj in np.arange(1,9):
@@ -466,10 +466,10 @@ if __name__ == "__main__":
             process_bootstrap_result_for_uv(subj, "clip", "laion400m_clip")
 
     if args.plot_voxel_wise_performance:
-        model1 = "convnet_res50"
-        model2 = "clip_visual_resnet"
-        corr_i = load_model_performance(model1, None, args.output_root, subj=args.subj)
-        corr_j = load_model_performance(model2, None, args.output_root, subj=args.subj)
+        model1 = "mreserve_combined"
+        model2 = "vjepa"
+        corr_i = load_model_performance(model1, args.output_root, subj=args.subj)
+        corr_j = load_model_performance(model2, args.output_root, subj=args.subj)
 
         if args.roi is not None:
             colors = np.load(

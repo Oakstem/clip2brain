@@ -5,7 +5,6 @@ import pandas as pd
 import numpy as np
 from torch._C import Value
 from tqdm import tqdm
-from PIL import Image
 
 from sklearn.decomposition import PCA
 
@@ -17,12 +16,16 @@ from torchvision import transforms, utils, models
 
 import torchextractor as tx
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = "cuda" if torch.cuda.is_available() else "mps"
 import configparser
+from util.custom_utils import *
+from PIL import Image
+
 
 config = configparser.ConfigParser()
-config.read("config.cfg")
+config.read("../config.cfg")
 stimuli_dir = config["DATA"]["StimuliDir"]
+
 
 preprocess = transforms.Compose(
     [
@@ -41,7 +44,7 @@ def extract_resnet_prePCA_feature():
     subsampling_size = 5000
 
     print("Extracting ResNet features")
-    for cid in tqdm(all_coco_ids):
+    for cid in tqdm(img_ds):
         with torch.no_grad():
             image_path = "%s/%s.jpg" % (stimuli_dir, cid)
             image = preprocess(Image.open(image_path)).unsqueeze(0).to(device)
@@ -91,16 +94,14 @@ def extract_resnet_last_layer_feature(cid=None, saving=True):
 
     # print("Extracting ResNet features")
     if cid is None:
-        output = list()
-        for cid in tqdm(all_coco_ids):
+        output = {}
+        for cid, img_meta in tqdm(img_ds.items()):
             with torch.no_grad():
-                image_path = "%s/%s.jpg" % (stimuli_dir, cid)
+                image_path = img_meta['path']
                 image = preprocess(Image.open(image_path)).unsqueeze(0).to(device)
 
                 _, features = model(image)
-                output.append(
-                    features["avgpool"].squeeze().data.cpu().numpy().flatten()
-                )
+                output[cid] = features["avgpool"].squeeze().data.cpu().numpy().flatten()
     else:
         with torch.no_grad():
             image_path = "%s/%s.jpg" % (stimuli_dir, cid)
@@ -127,9 +128,21 @@ if __name__ == "__main__":
         default="output",
     )
     args = parser.parse_args()
-    feature_output_dir = "%s/subj%01d" % (args.feature_dir, args.subj)
-    all_coco_ids = np.load(
-        "%s/coco_ID_of_repeats_subj%02d.npy" % (args.project_output_dir, args.subj)
-    )
+    feature_output_dir = "/Users/alonz/PycharmProjects/clip2brain/features/RESNET_50"
+    img_ds = build_img_path_dict(stimuli_dir)
 
-    extract_resnet_last_layer_feature()
+    resnet_features = extract_resnet_last_layer_feature()
+    train_video_names_path = '/Users/alonz/PycharmProjects/pSTS_DB/psts_db/datasets/momments/fmri/annotations/train.csv'
+    test_video_names_path = '/Users/alonz/PycharmProjects/pSTS_DB/psts_db/datasets/momments/fmri/annotations/test.csv'
+
+    train_names = pd.read_csv(train_video_names_path)['video_name'].apply(lambda x: x.split('.')[0]).values
+    test_names = pd.read_csv(test_video_names_path)['video_name'].apply(lambda x: x.split('.')[0]).values
+
+    train_features = {key: np.nan for key in train_names}
+    test_features = {key: np.nan for key in test_names}
+
+    train_features.update({key: val for key, val in resnet_features.items() if key in train_names})
+    test_features.update({key: val for key, val in resnet_features.items() if key in test_names})
+
+    np.save(f'{feature_output_dir}/train_feature_matrix.npy', train_features)
+    np.save(f'{feature_output_dir}/test_feature_matrix.npy', test_features)

@@ -234,6 +234,8 @@ class RidgeCVEstimator:
         self.mean_cv_scores = cv_scores.mean(dim=0)
         self.best_l_scores, self.best_l_idxs = self.mean_cv_scores.max(dim=1)
         self.base_ridge = MultiRidge(self.ls, self.scale_X, self.scale_thresh)
+        # self.best_l_scores, self.best_l_idxs = self.mean_cv_scores.max(dim=0)
+        # self.base_ridge = MultiRidge([self.ls[self.best_l_idxs]], self.scale_X, self.scale_thresh)
         self.base_ridge.fit(X, Y)
         return self
 

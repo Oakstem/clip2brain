@@ -3,12 +3,12 @@ from pycocotools.coco import COCO
 import configparser
 
 config = configparser.ConfigParser()
-config.read("config.cfg")
-annFile_train_caps = config["COCO"]["AnnFileTrainCaps"]
-annFile_val_caps = config["COCO"]["AnnFileValCaps"]
+config.read("/Users/alonz/PycharmProjects/clip2brain/config.cfg")
+# annFile_train_caps = config["COCO"]["AnnFileTrainCaps"]
+# annFile_val_caps = config["COCO"]["AnnFileValCaps"]
 
-train_caps = COCO(annFile_train_caps)
-val_caps = COCO(annFile_val_caps)
+# train_caps = COCO(annFile_train_caps)
+# val_caps = COCO(annFile_val_caps)
 
 
 def load_captions(cid):

@@ -7,8 +7,8 @@ import configparser
 
 config = configparser.ConfigParser()
 config.read("config.cfg")
-stim_path = config["DATA"]["StimuliInfo"]
-STIM = pd.read_pickle(stim_path)
+# stim_path = config["DATA"]["StimuliInfo"]
+# STIM = pd.read_pickle(stim_path)
 
 
 def get_preloaded_features(

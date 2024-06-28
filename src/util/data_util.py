@@ -9,8 +9,8 @@ import configparser
 
 config = configparser.ConfigParser()
 config.read("config.cfg")
-stim_path = config["DATA"]["StimuliInfo"]
-STIM = pd.read_pickle(stim_path)
+# stim_path = config["DATA"]["StimuliInfo"]
+# STIM = pd.read_pickle(stim_path)
 
 
 def fill_in_nan_voxels(vals, subj, output_root, fill_in=0):
@@ -55,7 +55,7 @@ def load_model_performance(model, output_root=".", subj=1, measure="corr"):
                 continue
     else:
         out = np.load(
-            "%s/output/encoding_results/subj%d/%s_%s_whole_brain.p"
+            "%s/output/encoding_results/subj%s/%s_%s_whole_brain.p"
             % (output_root, subj, measure, model),
             allow_pickle=True,
         )

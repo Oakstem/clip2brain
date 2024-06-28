@@ -23,8 +23,20 @@ def r2_score(Real, Pred):
     # print(SSres.shape)
     SStot = np.var(Real, 0)
     # print(SStot.shape)
-    return np.nan_to_num(1 - SSres / SStot)
+    r2 = np.nan_to_num(1 - SSres / SStot)
+    if np.min(r2) < 0:
+        print(f"{np.sum(r2 < 0)} Negative R2 detected")
+        # print(r2)
+    return r2
 
+def r2_modified(Real, Pred):
+    tss = ((Real - Real.mean(axis=0))**2).sum(axis=0)
+    rss = ((Real - Pred) ** 2).sum(axis=0)
+    r2 = 1 - rss / tss
+    if np.min(r2) < 0:
+        print('Negative R2 detected')
+        print(r2)
+    return r2
 
 def zscore(mat, axis=None):
     if axis is None:

@@ -3,22 +3,86 @@ from random import weibullvariate
 import torch
 import pickle
 import numpy as np
+from sklearn import linear_model
 from tqdm import tqdm
 from sklearn.model_selection import (
     KFold,
     PredefinedSplit,
     train_test_split,
-    ShuffleSplit,
+    ShuffleSplit, BaseCrossValidator, GridSearchCV,
 )
 
-# from sklearn.metrics import r2_score
+# from sklearn.metrics import r2_score, r2_modified
 from scipy.stats import pearsonr
-
-from util.util import r2_score
+from util.util import r2_score, r2_modified
+# from sklearn.metrics import r2_score
 from encodingmodel.ridge import RidgeCVEstimator
+from encodingmodel.rdm_cv import RDMCrossValidator
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
+
+
+def additional_models_evaluation(x_train, y_train, x_test, y_test, cv=None, alphas=None):
+    if cv is None:
+        cv = RDMCrossValidator(n_splits=5, groups=train_groups)
+
+    # find best model for all 3
+    ridge = solve_ridge(y_train, x_train, cv, alphas)
+    lasso = solve_lasso(y_train, x_train, cv)
+    elasticnet = solve_elasticnet(y_train, x_train, cv)
+
+    ridge_score = ridge.score(x_test, y_test)
+    lasso_score = lasso.score(x_test, y_test)
+    elasticnet_score = elasticnet.score(x_test, y_test)
+
+    print(f'Ridge: {ridge_score}, Lasso: {lasso_score}, ElasticNet: {elasticnet_score}')
+    model_index = np.argmax([ridge_score, lasso_score, elasticnet_score])
+    model_list = [ridge, lasso, elasticnet]
+    print(f'Best model: {model_index}')
+
+    return model_list[model_index]
+
+def solve_ridge(y: np.array, x: np.array, cv: BaseCrossValidator, param_grid=None) -> linear_model.Ridge:
+    if param_grid is None:
+        param_grid = {
+            'alpha': [0, 0.1, 1.0, 10.0],
+        }
+    else:
+        param_grid = {
+            'alpha': param_grid,
+        }
+
+    grid_search = GridSearchCV(estimator=linear_model.Ridge(), param_grid=param_grid, cv=cv, scoring='neg_mean_squared_error', verbose=1)
+    grid_search.fit(x, y)
+
+    best_model = grid_search.best_estimator_
+    return best_model
+
+
+def solve_lasso(y: np.array, x: np.array, cv: BaseCrossValidator) -> linear_model.Lasso:
+    param_grid = {
+        'alpha': [0.1, 1.0, 10.0],
+    }
+
+    grid_search = GridSearchCV(estimator=linear_model.Lasso(), param_grid=param_grid, cv=cv, scoring='r2')
+    grid_search.fit(x, y)
+
+    best_model = grid_search.best_estimator_
+    return best_model
+
+
+def solve_elasticnet(y: np.array, x: np.array, cv: BaseCrossValidator) -> linear_model.ElasticNet:
+    param_grid = {
+        'alpha': [0.1, 1.0, 10.0],
+        'l1_ratio': [0.1, 0.5, 0.9]
+    }
+
+    grid_search = GridSearchCV(estimator=linear_model.ElasticNet(), param_grid=param_grid, cv=cv, scoring='r2')
+    grid_search.fit(x, y)
+
+    best_model = grid_search.best_estimator_
+    return best_model
 
 
 def scoring(y, yhat):
@@ -28,10 +92,12 @@ def scoring(y, yhat):
 def ridge_cv(
     X,
     y,
+    full_data=None,
     tol=8,
     nfold=7,
     cv=False,
     fix_testing=False,
+    percentile=95,
 ):
     # fix_tsesting can be True (42), False, and a seed
     if fix_testing is True:
@@ -45,10 +111,17 @@ def ridge_cv(
         np.logspace(-tol, 1 / 2 * np.log10(X.shape[1]) + tol, 100)
     )
 
-    # split train and test set
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.15, random_state=fix_testing_state
-    )
+    if full_data is not None:
+        X_train = full_data["X_train"]
+        y_train = full_data["Y_train"]
+        X_test = full_data["X_test"]
+        y_test = full_data["Y_test"]
+    else:
+        # split train and test set
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.05, random_state=fix_testing_state
+        )
+
 
     X_train = torch.from_numpy(X_train).to(dtype=torch.float64).to(device)
     y_train = torch.from_numpy(y_train).to(dtype=torch.float64).to(device)
@@ -78,10 +151,30 @@ def ridge_cv(
 
     weights, bias = clf.get_model_weights_and_bias()
 
+    # clf_custom = additional_models_evaluation(X_train, y_train, X_test, y_test, kfold, alphas=alphas.numpy().tolist())
+
     print("Making predictions using ridge models...")
-    yhat = clf.predict(X_test).cpu().numpy()
+    # yhat = clf.predict(X_test).cpu().numpy()
+    yhat = clf.predict(X_test)
+    # yhat_custom = clf_custom.predict(X_test)
+
+    if isinstance(yhat, torch.Tensor):
+        yhat = yhat.cpu().numpy()
     try:
+        print(f"MSE: {np.mean((y_test - yhat)**2)}")
         rsqs = r2_score(y_test, yhat)
+        # rsqs = r2_modified(y_test, yhat)
+        # rsqs_custom = r2_modified(y_test, yhat_custom)
+        if rsqs is not None:
+            rsqs_perc = np.percentile(rsqs, percentile)
+            rsqs_mean = np.mean(rsqs)
+        else:
+            rsqs_perc = np.nan
+            rsqs_mean = np.nan
+        print(f"R2 score at {percentile} percentile: {rsqs_perc}")
+        print(f"R2 MAX score: {np.max(rsqs)}")
+
+        print(f"Mean R2 score: {rsqs_mean}")
     except ValueError:  # debugging for NaNs in subj 5
         print("Ytest: NaNs? Finite?")
         print(np.any(np.isnan(y_test)))
@@ -108,7 +201,9 @@ def ridge_cv(
 def fit_encoding_model(
     X,
     y,
+    full_data=None,
     model_name=None,
+    brain_roi_name=None,
     subj=1,
     fix_testing=False,
     cv=False,
@@ -116,12 +211,12 @@ def fit_encoding_model(
     saving_dir=None,
 ):
 
-    model_name += "_whole_brain"
+    model_name += f"_{brain_roi_name}" if brain_roi_name is not None else "_whole_brain"
 
     if cv:
         print("Running cross validation")
 
-    outpath = "%s/encoding_results/subj%d" % (saving_dir, subj)
+    outpath = "%s/encoding_results/subj%s" % (saving_dir, subj)
     if not os.path.isdir(outpath):
         os.makedirs(outpath)
 
@@ -132,7 +227,8 @@ def fit_encoding_model(
     cv_outputs = ridge_cv(
         X,
         y,
-        cv=False,
+        full_data=full_data,
+        cv=True,
         fix_testing=fix_testing,
     )
 
@@ -177,7 +273,7 @@ def bootstrap_sampling(weights, bias, X_mean, X_test, y_test, repeat, seed):
     for _ in tqdm(range(repeat)):
         sampled_idx = np.random.choice(label_idx, replace=True, size=len(label_idx))
         y_test_sampled = y_test[sampled_idx, :]
-        rsqs = r2_score(y_test_sampled, yhat.cpu().numpy())
+        rsqs = r2_modified(y_test_sampled, yhat.cpu().numpy())
         rsq_dist.append(rsqs)
 
     return rsq_dist
@@ -194,7 +290,7 @@ def bootstrap_test(
     print("Running bootstrap test of {} for {} times".format(model_name, repeat))
 
     # save rsq
-    outpath = "%s/bootstrap/subj%d/" % (saving_dir, subj)
+    outpath = "%s/bootstrap/subj%s/" % (saving_dir, subj)
     if not os.path.isdir(outpath):
         os.makedirs(outpath)
 
