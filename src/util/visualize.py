@@ -1,7 +1,7 @@
 import glob
 import pickle
 from pathlib import Path
-
+import plotly.express as px
 import numpy as np
 
 
@@ -51,8 +51,12 @@ import pandas as pd
 df = pd.DataFrame(full_data, columns=['subject', 'brain_region', 'model_type', 'r2_scores', 'r2_scores_mean', 'r2_95_percentile'])
 # sort by brain region
 df = df.sort_values(by='brain_region')
+
+# save the dataframe to csv
+df.to_csv(f'{plots_path}/r2_voxel_regression_scores.csv', index=False)
+print(f'saved dataframe to {plots_path}/r2_voxel_regression_scores.csv')
 #%% plot the R2 scores for each subject grouped by brain region
-import plotly.express as px
+
 import plotly.offline as pyo
 
 unq_models = np.unique(model_type)
@@ -68,7 +72,7 @@ for model in unq_models:
     # now lets remove inf values
     df2 = df2[(df2['r2_scores'] != np.inf) & (df2['r2_scores'] != -np.inf)]
     # plot
-    fig = px.box(df2,x='brain_region', y='r2_scores', color='subject', title=f'{model} R2 scores for each subject grouped by brain region')
+    fig = px.box(df2,x='brain_region', y='r2_scores_mean', color='subject', title=f'{model} R2 scores for each subject grouped by brain region')
     # limit y axis to 0-1
     fig.update_yaxes(range=[-1, 1])
     # pyo.iplot(fig)
@@ -84,15 +88,54 @@ for model in unq_models:
 #                    'clip_original_layer_5', 'clip_original_layer_12', 'clip_original_final_layer',
 #                    'vjepa', ]
 # Only final layers of clip
+nb_models = 100
 relevant_models = ['mreserve', 'resnet50', 'clip_expert_pond_final_layer',
-                   'clip_original_final_layer', 'clip_expert_pond_all_layers_PCA20', 'clip_expert_pond_all_layers',
-                   'vjepa']
-df_filtered = df[df['model_type'].str.contains('|'.join(relevant_models))]
+                   'clip_original_final_layer',
+                   'vjepa', 'DINOv2', 'VGG16', 'ViViT', 'OpenCLIP', 'ECAPA', 'Hubert', 'VGGish',
+                   'clap-htsat-fused', 'clap-htsat-unfused', 'VideoMAE-finetuned', 'Wav2VecBert-xvector',
+                   'XCLIP']
+# relevant_models = []
+if relevant_models:
+    df_filtered = df[df['model_type'].str.contains('|'.join(relevant_models))]
+    df_filtered = df_filtered[~df_filtered['model_type'].str.contains('5PC')]
+else:
+    df_filtered = df
+
+# remove inf values
+df_filtered = df_filtered[(df_filtered['r2_scores_mean'] != np.inf) & (df_filtered['r2_scores_mean'] != -np.inf)]
+def average_each_voxel_by_subject(df):
+    for model_type in df['model_type'].unique():
+        model_df = df[df['model_type'] == model_type]
+        for brain_roi in model_df['brain_region'].unique():
+            roi_df = model_df[model_df['brain_region'] == brain_roi]
+            voxel_cols = [f'voxel_{i}' for i in range(roi_df['r2_scores'].iloc[0].shape[0])]
+            roi_df[voxel_cols] = pd.DataFrame(roi_df['r2_scores'].tolist(), index=roi_df.index)
+            return roi_df
+        break
+
+# test_df = average_each_voxel_by_subject(df_filtered)
+
 # rename the clip finetuned wandb name to "clip_finetuned"
 wandb_name = 'expert_pond'
 df_filtered['model_type'] = df_filtered['model_type'].apply(lambda x: x.replace(wandb_name, 'clip_finetuned'))
+# save the filtered dataframe to csv
+df_filtered.to_csv(f'{plots_path}/r2_voxel_regression_scores_filtered.csv', index=False)
+print(f'saved filtered dataframe to {plots_path}/r2_voxel_regression_scores_filtered.csv')
 
-fig = px.box(df_filtered, x='brain_region', y='r2_scores_mean', color='model_type', title='Different models R2 scores grouped by brain region')
+
+df_filtered = df_filtered.groupby(['model_type', 'brain_region'])['r2_scores_mean'].median()
+# remove inf values
+# df_filtered = df_filtered[(df_filtered != np.inf) & (df_filtered != -np.inf)]
+# take top 5 models that describe best the psts
+# df_filtered = df_filtered[''].sort_values(ascending=False).head(5)
+df_filtered = df_filtered.reset_index()
+psts_only = df_filtered[df_filtered['brain_region'] == 'pSTS_rh']
+psts_only = psts_only.sort_values(by='r2_scores_mean', ascending=False)
+top_models = psts_only['model_type'].head(nb_models)
+df_filtered = df_filtered[df_filtered['model_type'].isin(top_models)]
+
+fig = px.bar(df_filtered, x='brain_region', y='r2_scores_mean', color='model_type', title='Different models R2 scores grouped by brain region')
+fig.update_layout(barmode='group')
 # pyo.iplot(fig)
 fig.show()
 # save to html

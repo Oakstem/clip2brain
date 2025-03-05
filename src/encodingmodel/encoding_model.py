@@ -19,7 +19,13 @@ from util.util import r2_score, r2_modified
 from encodingmodel.ridge import RidgeCVEstimator
 from encodingmodel.rdm_cv import RDMCrossValidator
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+if torch.cuda.is_available():
+    device = "cuda:0"
+# MPS has no SVD support thus making calculations slower
+# elif torch.backends.mps.is_available():
+#     device = 'mps'
+else:
+    device = 'cpu'
 print(device)
 
 
@@ -123,12 +129,11 @@ def ridge_cv(
         )
 
 
-    X_train = torch.from_numpy(X_train).to(dtype=torch.float64).to(device)
-    y_train = torch.from_numpy(y_train).to(dtype=torch.float64).to(device)
-    X_test = torch.from_numpy(X_test).to(dtype=torch.float64).to(device)
+    X_train = torch.from_numpy(X_train).to(dtype=torch.float32).to(device)
+    y_train = torch.from_numpy(y_train).to(dtype=torch.float32).to(device)
+    X_test = torch.from_numpy(X_test).to(dtype=torch.float32).to(device)
 
     # model selection
-
     if cv:
         kfold = KFold(n_splits=nfold)
     else:
@@ -161,13 +166,15 @@ def ridge_cv(
     if isinstance(yhat, torch.Tensor):
         yhat = yhat.cpu().numpy()
     try:
-        print(f"MSE: {np.mean((y_test - yhat)**2)}")
+        print(f"MSE: {np.linalg.norm(y_test - yhat, 2, axis=1).mean()}")
+        print(f"MAE: {np.linalg.norm(y_test - yhat, 1, axis=1).mean()}")
         rsqs = r2_score(y_test, yhat)
         # rsqs = r2_modified(y_test, yhat)
         # rsqs_custom = r2_modified(y_test, yhat_custom)
         if rsqs is not None:
             rsqs_perc = np.percentile(rsqs, percentile)
             rsqs_mean = np.mean(rsqs)
+            rsqs_mean_no_neg = np.mean(rsqs[rsqs >= 0])
         else:
             rsqs_perc = np.nan
             rsqs_mean = np.nan
@@ -175,6 +182,7 @@ def ridge_cv(
         print(f"R2 MAX score: {np.max(rsqs)}")
 
         print(f"Mean R2 score: {rsqs_mean}")
+        print(f"Mean R2 score without negatives: {rsqs_mean_no_neg}")
     except ValueError:  # debugging for NaNs in subj 5
         print("Ytest: NaNs? Finite?")
         print(np.any(np.isnan(y_test)))
@@ -320,10 +328,10 @@ def bootstrap_test(
         print(weights.shape)
 
     X_train, X_test, _, y_test = train_test_split(X, y, test_size=0.15, random_state=42)
-    X_train = torch.from_numpy(X_train).to(dtype=torch.float64).to(device)
-    X_test = torch.from_numpy(X_test).to(dtype=torch.float64).to(device)
-    weights = torch.from_numpy(weights).to(dtype=torch.float64).to(device)
-    bias = torch.from_numpy(bias).to(dtype=torch.float64).to(device)
+    X_train = torch.from_numpy(X_train).to(dtype=torch.float32).to(device)
+    X_test = torch.from_numpy(X_test).to(dtype=torch.float32).to(device)
+    weights = torch.from_numpy(weights).to(dtype=torch.float32).to(device)
+    bias = torch.from_numpy(bias).to(dtype=torch.float32).to(device)
 
     X_mean = X_train.mean(dim=0, keepdim=True)
 

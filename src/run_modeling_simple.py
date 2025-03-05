@@ -73,12 +73,20 @@ def scale(train_X, test_X):
     test_X = (test_X - mean) / variance
     return train_X, test_X
 
+def check_explained_var_ratio(data, transformed_data, pca):
+    orig_var = (data.var(axis=0))
+    tr_var = pca.inverse_transform(transformed_data).var(axis=0)
+    explained_ratio = tr_var / orig_var
+    explained_mean = explained_ratio.mean()
+    return explained_mean, explained_ratio
+
+
 def project_to_pca(data, nb_componentes=5, pca=None):
     if pca is None:
         pca = PCA(n_components=nb_componentes, svd_solver="full")
         pca.fit(data)
     PCs = pca.components_
-    data = pca.transform(data)
+    transformed_data = pca.transform(data)
     # from sklearn.preprocessing import Normalizer, StandardScaler
     # # Create a normalizer object
     # scaler = StandardScaler()  # l2 norm results in a norm of 1
@@ -86,7 +94,9 @@ def project_to_pca(data, nb_componentes=5, pca=None):
     # X_scaled = scaler.fit_transform(data)
     # pca = PCA(n_components=nb_componentes, svd_solver="full")
     # pca.fit(X_scaled)
-    return data, pca
+    explained_var_mean, explained_var = check_explained_var_ratio(data, transformed_data, pca)
+    print(f"PCA Explained variance ratio mean: {explained_var_mean}")
+    return transformed_data, pca
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -135,6 +145,18 @@ if __name__ == "__main__":
     parser.add_argument(
         "--pca_nb",
         default=20,
+        type=int,
+        help="number of components for PCA",
+    )
+    parser.add_argument(
+        "--voxel_pca",
+        action="store_true",
+        default=False,
+        help="choose whether to apply pca on voxel data",
+    )
+    parser.add_argument(
+        "--voxel_pca_nb",
+        default=5,
         type=int,
         help="number of components for PCA",
     )
@@ -211,6 +233,11 @@ if __name__ == "__main__":
             print("Loading brain data from: " + Path(brain_path).name)
             brain_roi_name = brain_path.split("T1w_roi-")[-1].split('_roi')[0]
             test_brain_path = brain_path.replace("train", "test")
+
+            # if 'pSTS_hemi-rh' in brain_roi_name:
+            #     pass
+            # else:
+            #     continue
 
             # Load brain data
             br_data = np.load(brain_path, allow_pickle=True)
@@ -302,7 +329,6 @@ if __name__ == "__main__":
             feature_mat = feature_mat[(trial_mask & trial_mask2), :]
             br_data = br_data[(trial_mask & trial_mask2), :]
 
-
             test_trial_mask2 = np.sum(np.isnan(test_feature_mat), axis=1) <= 0
             test_feature_mat = test_feature_mat[(test_trial_mask & test_trial_mask2), :]
             test_br_data = test_br_data[(test_trial_mask & test_trial_mask2), :]
@@ -311,6 +337,12 @@ if __name__ == "__main__":
                 feature_mat, test_feature_mat = scale(feature_mat, test_feature_mat)
                 feature_mat, pca = project_to_pca(feature_mat, nb_componentes=args.pca_nb)
                 test_feature_mat, pca = project_to_pca(test_feature_mat, nb_componentes=args.pca_nb, pca=pca)
+
+            if args.voxel_pca:
+                br_data, test_br_data = scale(br_data, test_br_data)
+                br_data, pca = project_to_pca(br_data, nb_componentes=args.voxel_pca_nb)
+                test_br_data, pca = project_to_pca(test_br_data, nb_componentes=args.voxel_pca_nb, pca=pca)
+
 
 
             full_data = {

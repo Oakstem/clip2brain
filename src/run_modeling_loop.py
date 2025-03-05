@@ -10,5 +10,5 @@ for encoding_file in glob(encodings_dir):
     print(f"Running voxel regression for: {encoding_file}")
     output_model_name = Path(encoding_file).stem.split('_features')[0]
     command = (f"python run_modeling_simple.py --feature_matrix {encoding_file}"
-               f" --model_name_to_save clip_expert_pond_all_layers --fix_testing")
+               f" --model_name_to_save {output_model_name} --fix_testing")
     os.system(command)
